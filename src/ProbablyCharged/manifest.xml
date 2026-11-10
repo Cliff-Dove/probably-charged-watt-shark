@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Manifest>
+  <ID>probably_charged_watt_shark</ID>
+  <Name>Probably Charged Watt Shark</Name>
+  <Author>Cliff Dove</Author>
+  <ModVersion>0.1.0</ModVersion>
+  <Description>A Probably Stolen mod that stacks PowerBlocs, charges every battery in the cabinet, and lets you sell surplus power or donate it to the Lower Levels.</Description>
+  <GameVersions>
+    <Version>0.46</Version>
+  </GameVersions>
+  <Prerequisites />
+  <Assemblies>
+    <Assembly>ProbablyCharged.dll</Assembly>
+  </Assemblies>
+  <Capabilities />
+</Manifest>

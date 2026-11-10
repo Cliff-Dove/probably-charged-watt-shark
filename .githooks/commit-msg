@@ -1,0 +1,12 @@
+#!/bin/sh
+
+# Git 将提交说明文件的路径作为第一个参数传入。
+title=$(head -n 1 "$1")
+
+# type 必填，scope 和破坏性变化标记 ! 可选。
+pattern='^(feat|fix|docs|refactor|test|build|ci|chore|perf|revert)(\([^)]+\))?!?: .+$'
+
+if ! printf '%s\n' "$title" | grep -Eq "$pattern"; then
+    printf '%s\n' '提交标题格式应为：type(scope): 说明' >&2
+    exit 1
+fi

@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# 检查暂存内容中的空白错误。
+git diff --cached --check || exit $?
+
+# 只检查项目格式，不修改文件。
+dotnet format ./src/ProbablyCharged/ProbablyCharged.csproj --verify-no-changes
