@@ -7,13 +7,15 @@ namespace ProbablyCharged
 {
     public sealed class ModEntry : IMod
     {
-        private ModLog? logger;
-        private string modId = null!;
+        public ModLog? logger;
+        public string modId = null!;
         private Coroutine? consoleRoutine;
 
         private QuantumConsole? console;
 
         private TMP_FontAsset? originalFont;
+
+        private const string PREFIX = "probably_charged";
 
         public void Init(ModManifest manifest)
         {
@@ -26,24 +28,20 @@ namespace ProbablyCharged
         {
             logger?.Log($"[{modId}] Enabled");
             consoleRoutine = ModHelper.StartCoroutine(modId, ConfigureConsole());
+            ModHook.OnModItemDirectoryInit += RegisterItems;
         }
 
         public void OnDisable()
         {
-            if (consoleRoutine != null)
-            {
-                ModHelper.StopCoroutine(modId, consoleRoutine);
-            }
-
-            if (console != null && originalFont != null)
-            {
-                console.Theme.Font = originalFont;
-                console.ApplyTheme(console.Theme, true);
-                logger?.Log($"console font restored:{console.Theme.Font.name}");
-            }
+            ModHook.OnModItemDirectoryInit -= RegisterItems;
+            ConsoleRestore();
             logger?.Log($"[{modId}] exiting");
         }
 
+        private void RegisterItems(ModItemDirectory dir)
+        {
+            dir.Add($"{PREFIX}_watt_shark", () => WattShark.SharkDrop(modId));
+        }
         private IEnumerator ConfigureConsole()
         {
             while (QuantumConsole.Instance == null || FontLoader.Instance == null
@@ -57,6 +55,21 @@ namespace ProbablyCharged
             console.ApplyTheme(console.Theme, true);
 
             logger?.Log($"控制台中文字体已应用:{console.Theme.Font.name}");
+        }
+
+        private void ConsoleRestore()
+        {
+            if (consoleRoutine != null)
+            {
+                ModHelper.StopCoroutine(modId, consoleRoutine);
+            }
+
+            if (console != null && originalFont != null)
+            {
+                console.Theme.Font = originalFont;
+                console.ApplyTheme(console.Theme, true);
+                logger?.Log($"console font restored:{console.Theme.Font.name}");
+            }
         }
     }
 }
