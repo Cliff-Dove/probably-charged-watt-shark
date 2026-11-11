@@ -6,7 +6,7 @@
   <ModVersion>0.1.0</ModVersion>
   <Description>A Probably Stolen mod that stacks PowerBlocs, charges every battery in the cabinet, and lets you sell surplus power or donate it to the Lower Levels.</Description>
   <GameVersions>
-    <Version>0.46</Version>
+    <Version>0.46D</Version>
   </GameVersions>
   <Prerequisites />
   <Assemblies>

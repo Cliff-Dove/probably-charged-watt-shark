@@ -26,5 +26,15 @@
       <HintPath>$(GameDir)\Probably Stolen_Data\Managed\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- 中文字体资源 -->
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(GameDir)\Probably Stolen_Data\Managed\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- 修改控制台主题字体 -->
+    <Reference Include="QFSW.QC">
+      <HintPath>$(GameDir)\Probably Stolen_Data\Managed\QFSW.QC.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 </Project>
