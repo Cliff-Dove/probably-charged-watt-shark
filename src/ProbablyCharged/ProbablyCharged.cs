@@ -1,120 +1,150 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
-using TMPro;
 using QFSW.QC;
+using TMPro;
+using UnityEngine;
 
 namespace ProbablyCharged
 {
     public sealed class ModEntry : IMod
     {
-        internal static ModLog logger { get; private set; } = null!;
-        public string modId = null!;
-        private Coroutine? consoleRoutine;
+        // Init 先于启用和游戏钩子执行，其他模组类共享此日志实例。
+        internal static ModLog Logger { get; private set; } = null!;
 
-        private QuantumConsole? console;
-
-        private TMP_FontAsset? originalFont;
-
-        private const string PREFIX = "probably_charged";
-
-        private const string WATT_SHARK_ID = $"{PREFIX}_watt_shark";
+        private string _modId = null!;
+        private Coroutine? _consoleFontRoutine;
+        private QuantumConsole? _console;
+        private TMP_FontAsset? _originalConsoleFont;
 
         public void Init(ModManifest manifest)
         {
-            modId = manifest.ID;
-            logger = new ModLog(manifest);
-            logger.Log($"Application version: {UnityEngine.Application.version}");
+            _modId = manifest.ID;
+            Logger = new ModLog(manifest);
+            Logger.Log(
+                $"[ModEntry] Initialized: modId={_modId}, gameVersion={Application.version}");
         }
 
         public void OnEnable()
         {
-            logger?.Log($"Mod Enabled");
-            consoleRoutine = ModHelper.StartCoroutine(modId, ConfigureConsole());
+            _consoleFontRoutine = ModHelper.StartCoroutine(_modId, ConfigureConsoleFont());
             ModHook.OnModItemDirectoryInit += RegisterItems;
-            //瓦鲨获取渠道
-            ModHook.OnPlaceInventorInventoryItemEarly += OfferWattShark;
-            //夜间充电
-            ModHook.OnGoingSleepLate += ChargeWattSharks;
+            ModHook.OnPlaceInventorInventoryItemEarly += OfferWattSharkIfMissing;
+
+            // 先让原版阵列和机器结算，再根据实际剩余电量执行柜内充电。
+            ModHook.OnGoingSleepLate += ChargeWattSharksAtNight;
+            Logger.Log("[ModEntry] Enabled");
         }
 
         public void OnDisable()
         {
-            ModHook.OnGoingSleepLate -= ChargeWattSharks;
-            ModHook.OnPlaceInventorInventoryItemEarly -= OfferWattShark;
+            ModHook.OnGoingSleepLate -= ChargeWattSharksAtNight;
+            ModHook.OnPlaceInventorInventoryItemEarly -= OfferWattSharkIfMissing;
             ModHook.OnModItemDirectoryInit -= RegisterItems;
-            ConsoleRestore();
-            logger?.Log($"Mod exiting");
+            RestoreConsoleFont();
+            Logger.Log("[ModEntry] Disabled");
         }
 
-        private void RegisterItems(ModItemDirectory dir)
+        private void RegisterItems(ModItemDirectory directory)
         {
-            dir.Add(WATT_SHARK_ID, () => WattShark.SharkDrop(modId));
-        }
+            bool registered = directory.Add(
+                WattShark.ItemId, () => WattShark.Create(_modId));
 
-        private void OfferWattShark(List<GameItem> playerItems)
-        {
-            logger?.Log($"Checking if `WattShark` should be offered to Inventor store.");
-            // 检查是否应该提供瓦鲨
-            if (!IsGlobalExist(WATT_SHARK_ID))
+            if (registered)
             {
-                logger?.Log($"Trying to offer `WattShark` to Inventor store.");
-                PlayerStore.Instance.AddDirectSellingItemToTable(WATT_SHARK_ID);
-                logger?.Log("Offer `WattShark` to Inventor store.");
+                Logger.Log($"[ModEntry] ItemRegistered: itemId={WattShark.ItemId}");
+            }
+            else
+            {
+                Logger.Error($"[ModEntry] ItemRegistrationFailed: itemId={WattShark.ItemId}");
             }
         }
 
-        private void ChargeWattSharks()
+        private void OfferWattSharkIfMissing(List<GameItem> playerItems)
         {
-            if (!PlayerStore.Instance.isPowerOn)
+            if (ExistsInStoreOrSoldInventory(WattShark.ItemId))
             {
+                Logger.Log(
+                    $"[ModEntry] OfferSkipped: itemId={WattShark.ItemId}, reason=AlreadyPresent");
                 return;
             }
 
+            // 此接口与原上柜方法使用相同流程，并返回真实的放置结果。
+            bool placed = PlayerStore.Instance.TryAddDirectSellingItemToTable(WattShark.ItemId);
+            if (placed)
+            {
+                Logger.Log($"[ModEntry] ItemOffered: itemId={WattShark.ItemId}");
+            }
+            else
+            {
+                Logger.Warning($"[ModEntry] ItemOfferFailed: itemId={WattShark.ItemId}");
+            }
+        }
+
+        private void ChargeWattSharksAtNight()
+        {
+            if (!PlayerStore.Instance.isPowerOn)
+            {
+                Logger.Log("[ModEntry] NightChargeSkipped: reason=PowerOff");
+                return;
+            }
+
+            int cabinetCount = 0;
             foreach (GameItem item in PlayerStore.Instance.FindAllItem())
             {
-                if (item.identifier == WATT_SHARK_ID)
+                if (item.identifier == WattShark.ItemId)
                 {
+                    cabinetCount++;
                     WattShark.ChargeAtNight(item);
                 }
             }
+
+            Logger.Log($"[ModEntry] NightChargeProcessed: cabinetCount={cabinetCount}");
         }
-        private bool IsGlobalExist(string itemId)
+
+        private static bool ExistsInStoreOrSoldInventory(string itemId)
         {
-            //检查用户商店
-            bool existsInStore = PlayerStore.Instance.FindAllItem(false).Any(item => item.identifier == itemId);
-            bool existsInSold = EmporiumEntry.Instance.soldElement.childItems.Any(item => item.identifier == itemId);
-            logger?.Log($"Checking global existence: `{itemId}` ———— {existsInStore || existsInSold}, exists in store: {existsInStore}, exists in sold: {existsInSold}");
+            // 保留现有检查范围；这并不是覆盖所有存档位置的全局查询。
+            bool existsInStore = PlayerStore.Instance.FindAllItem(false)
+                .Any(item => item.identifier == itemId);
+            bool existsInSold = EmporiumEntry.Instance.soldElement.childItems
+                .Any(item => item.identifier == itemId);
+
+            Logger.Log(
+                $"[ModEntry] InventoryChecked: itemId={itemId}, " +
+                $"inStore={existsInStore}, inSold={existsInSold}");
             return existsInStore || existsInSold;
         }
-        private IEnumerator ConfigureConsole()
+
+        private IEnumerator ConfigureConsoleFont()
         {
-            while (QuantumConsole.Instance == null || FontLoader.Instance == null
-            || FontLoader.Instance.simplifiedChineseFont == null)
+            while (QuantumConsole.Instance == null ||
+                FontLoader.Instance == null ||
+                FontLoader.Instance.simplifiedChineseFont == null)
             {
                 yield return null;
             }
-            console = QuantumConsole.Instance;
-            originalFont = console.Theme.Font;
-            console.Theme.Font = FontLoader.Instance.simplifiedChineseFont;
-            console.ApplyTheme(console.Theme, true);
 
-            logger?.Log($"控制台中文字体已应用:{console.Theme.Font.name}");
+            _console = QuantumConsole.Instance;
+            _originalConsoleFont = _console.Theme.Font;
+            _console.Theme.Font = FontLoader.Instance.simplifiedChineseFont;
+            _console.ApplyTheme(_console.Theme, true);
+
+            Logger.Log($"[ModEntry] ConsoleFontApplied: font={_console.Theme.Font.name}");
         }
 
-        private void ConsoleRestore()
+        private void RestoreConsoleFont()
         {
-            if (consoleRoutine != null)
+            if (_consoleFontRoutine != null)
             {
-                ModHelper.StopCoroutine(modId, consoleRoutine);
+                ModHelper.StopCoroutine(_modId, _consoleFontRoutine);
             }
 
-            if (console != null && originalFont != null)
+            if (_console != null && _originalConsoleFont != null)
             {
-                console.Theme.Font = originalFont;
-                console.ApplyTheme(console.Theme, true);
-                logger?.Log($"console font restored:{console.Theme.Font.name}");
+                _console.Theme.Font = _originalConsoleFont;
+                _console.ApplyTheme(_console.Theme, true);
+                Logger.Log($"[ModEntry] ConsoleFontRestored: font={_console.Theme.Font.name}");
             }
         }
     }

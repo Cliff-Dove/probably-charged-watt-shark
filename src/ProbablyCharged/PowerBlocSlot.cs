@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using UnityEngine;
 
@@ -7,19 +8,19 @@ namespace ProbablyCharged
 {
     internal sealed class PowerBlocSlot : GameSlotInventory
     {
-        internal const string ItemId = "powerblock";
-        internal const int MaxCount = 10;
+        internal const int MaxStackCount = 10;
 
         public PowerBlocSlot(int width, int height) : base(width, height)
         {
             mayInventoryAddItemFunc =
-                (item, inventory) => item.identifier == ItemId;
+                (item, inventory) => item.identifier == GameContent.PowerBlocItemId;
 
             maxSlotAmountItemFunc =
-                (item, inventory, slot) => MaxCount;
+                (item, inventory, slot) => MaxStackCount;
 
             onSlotAddItemEndFunc += NormalizeChangedItem;
             onSlotChangeAmountItemFunc += NormalizeChangedItem;
+            onSlotRemoveItemEndFunc += LogRemovedItem;
         }
 
         public override SlotMarker? TryFindOneValidInventorySlot(GameItem item)
@@ -38,6 +39,7 @@ namespace ProbablyCharged
             return slot.IsValid() ? slot : null;
         }
 
+        // 悬停和拖放预览会反复调用此方法，只计算许可与数量，不修改状态或输出日志。
         internal SlotMarker CreateMergeSlot(
             GameItem item,
             int requestedNum,
@@ -57,8 +59,8 @@ namespace ProbablyCharged
 
             if (target == null ||
                 ReferenceEquals(item, target) ||
-                item.identifier != ItemId ||
-                target.identifier != ItemId ||
+                item.identifier != GameContent.PowerBlocItemId ||
+                target.identifier != GameContent.PowerBlocItemId ||
                 GeneralHelper.IsItemOwned(item) !=
                     GeneralHelper.IsItemOwned(target) ||
                 !MayHaveValidInventorySlot(item))
@@ -112,11 +114,12 @@ namespace ProbablyCharged
             }
 
             bool owned = GeneralHelper.IsItemOwned(item);
+            long valueBefore = item.unitValue;
 
             // 直接调用当前目录工厂，取得基础模板。
             // 不通过 DirectoryMaster.Item 分配额外的游戏实例编号。
             GameItem basic =
-                DirectoryMaster.GetFactory<GameItem>(ItemId)();
+                DirectoryMaster.GetFactory<GameItem>(GameContent.PowerBlocItemId)();
 
             try
             {
@@ -149,14 +152,27 @@ namespace ProbablyCharged
                 item.SetSprite(basic.spriteAtlasPath, basic.spritePath);
                 item.ValidateShapeState();
                 item.Validate();
+
+                ModEntry.Logger.Log(
+                    $"[PowerBlocSlot] StateNormalized: itemHash={RuntimeHelpers.GetHashCode(item):X8}, " +
+                    $"count={item.unitCount}, owned={owned}, valueBefore={valueBefore}, valueAfter={item.unitValue}");
             }
             finally
             {
                 basic.Destroy();
             }
         }
+
+        private static void LogRemovedItem(
+            GameItem item, GameInventory inventory, SlotMarker slot)
+        {
+            ModEntry.Logger.Log(
+                $"[PowerBlocSlot] ItemRemoved: itemHash={RuntimeHelpers.GetHashCode(item):X8}, " +
+                $"count={item.unitCount}");
+        }
     }
 
+    // 只扩展专用槽中的阵列，不改写阵列原有的过夜充电回调。
     [HarmonyPatch(typeof(GameItem), nameof(GameItem.MayStack))]
     internal static class PowerBlocMayStackPatch
     {
@@ -166,9 +182,9 @@ namespace ProbablyCharged
             ref bool __result)
         {
             if (__instance.parentInventory is PowerBlocSlot slot &&
-                __instance.identifier == PowerBlocSlot.ItemId &&
+                __instance.identifier == GameContent.PowerBlocItemId &&
                 otherItem != null &&
-                otherItem.identifier == PowerBlocSlot.ItemId)
+                otherItem.identifier == GameContent.PowerBlocItemId)
             {
                 __result = slot.CanMerge(otherItem);
             }
@@ -230,13 +246,19 @@ namespace ProbablyCharged
             GameItem __instance,
             GameItem __result)
         {
-            if (__instance.identifier == PowerBlocSlot.ItemId &&
+            if (__instance.identifier == GameContent.PowerBlocItemId &&
                 __result != null &&
-                __result.identifier == PowerBlocSlot.ItemId)
+                __result.identifier == GameContent.PowerBlocItemId)
             {
                 GeneralHelper.SetItemOwned(
                     __result,
                     GeneralHelper.IsItemOwned(__instance));
+
+                ModEntry.Logger.Log(
+                    $"[PowerBlocSlot] StackSplit: sourceHash={RuntimeHelpers.GetHashCode(__instance):X8}, " +
+                    $"splitHash={RuntimeHelpers.GetHashCode(__result):X8}, " +
+                    $"splitCount={__result.unitCount}, remainingCount={__instance.unitCount}, " +
+                    $"owned={GeneralHelper.IsItemOwned(__result)}");
             }
         }
     }
