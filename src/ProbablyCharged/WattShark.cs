@@ -49,7 +49,7 @@ namespace ProbablyCharged
                 blockHeight * gridSize,
                 Mathf.CeilToInt(storage.heightPixels / 2f)
             );
-            GameSlotInventory powerBlocks = new GameSlotInventory(blockWidth, blockHeight);
+            GameSlotInventory powerBlocks = new PowerBlocSlot(blockWidth, blockHeight);
             powerBlocks.mayInventoryAddItemFunc = (item, inventory) =>
             {
                 return item.identifier == "powerblock";
